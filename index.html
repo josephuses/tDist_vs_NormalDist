@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The t-Distribution vs. Normal Model</title>
+    
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f6f8; color: #333; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
+        
+        h1 { margin-bottom: 10px; color: #2c3e50; }
+
+        .container { max-width: 1100px; width: 100%; display: grid; grid-template-columns: 320px 1fr; gap: 20px; }
+        
+        /* Context Box */
+        .context-box {
+            grid-column: 1 / -1;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border-left: 5px solid #e74c3c; /* Red for t-dist */
+            margin-bottom: 10px;
+        }
+        .context-title { font-weight: bold; font-size: 1.2em; margin-bottom: 10px; color: #c0392b; }
+        .def-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 0.9em; }
+        .def-item strong { display: block; margin-bottom: 2px; }
+
+        /* Sidebar Controls */
+        .controls { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); height: fit-content; }
+        .control-group { margin-bottom: 25px; }
+        label { display: flex; justify-content: space-between; font-weight: 600; font-size: 0.9em; color: #555; margin-bottom: 5px; }
+        input[type=range] { width: 100%; cursor: pointer; }
+        .val-display { color: #e74c3c; font-weight: bold; }
+        
+        /* Stats Dashboard */
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px; }
+        .stat-card { background: #f8f9fa; padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #dee2e6; }
+        .stat-val { font-size: 1.4em; font-weight: bold; display: block; }
+        .stat-label { font-size: 0.75em; text-transform: uppercase; color: #7f8c8d; letter-spacing: 0.5px; }
+        
+        .color-norm { color: #2c3e50; }
+        .color-t { color: #e74c3c; }
+
+        /* Visualization Area */
+        .viz-panel { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 10px; min-height: 500px; position: relative; }
+
+        /* D3 Elements */
+        .axis text { fill: #7f8c8d; font-size: 11px; }
+        .domain, .tick line { stroke: #bdc3c7; }
+        
+        .line-norm { fill: none; stroke: #2c3e50; stroke-width: 2.5; stroke-dasharray: 6,4; opacity: 0.6; }
+        .line-t { fill: none; stroke: #e74c3c; stroke-width: 3; }
+        
+        .area-tail { fill: #e74c3c; opacity: 0.15; }
+
+        /* Tooltip-like markers */
+        .marker-line { stroke: #7f8c8d; stroke-width: 1; stroke-dasharray: 2; }
+        .marker-text { font-size: 11px; fill: #7f8c8d; }
+
+    </style>
+</head>
+<body>
+
+    <h1>The t-Distribution vs. Normal Model</h1>
+
+    <div class="container">
+        
+        <div class="context-box">
+            <div class="context-title">Why use t instead of z?</div>
+            <p>When sample sizes are small, we estimate the population standard deviation (\(\sigma\)) using the sample standard deviation (\(s\)). This adds uncertainty. The <strong>t-distribution (Red)</strong> compensates for this with "fatter tails," making extreme values more likely than in the <strong>Normal model (Black Dashed)</strong>.</p>
+            <div class="def-grid">
+                <div class="def-item" style="color:#2c3e50;">
+                    <strong>Standard Normal (\(z\)):</strong>
+                    Assume we know \(\sigma\). <br>Fixed shape. Tall peak, thin tails.
+                </div>
+                <div class="def-item" style="color:#e74c3c;">
+                    <strong>Student's t (\(df\)):</strong>
+                    Assume we only know \(s\). <br>Shape depends on Degrees of Freedom (\(df = n-1\)).
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h3>Parameters</h3>
+            
+            <div class="control-group">
+                <label>Degrees of Freedom (\(df\)) <span id="val_df" class="val-display">2</span></label>
+                <input type="range" id="dfSlider" min="1" max="30" step="1" value="2">
+                <small style="color:#777">As \(n\) increases, \(t\) becomes Normal.</small>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card" style="border-left: 4px solid #2c3e50;">
+                    <span class="stat-val color-norm">1.96</span>
+                    <span class="stat-label">z Critical (95%)</span>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #e74c3c;">
+                    <span class="stat-val color-t" id="stat_tcrit">--</span>
+                    <span class="stat-label">t Critical (95%)</span>
+                </div>
+                <div class="stat-card" style="grid-column: span 2; background: #fff5f5; border: 1px solid #e74c3c;">
+                    <span class="stat-val color-t" id="stat_penalty" style="font-size: 1.1em;">--</span>
+                    <span class="stat-label">"Penalty": % Wider Interval</span>
+                </div>
+            </div>
+            
+            <p style="font-size:0.85em; color:#666; margin-top:15px; line-height:1.4em;">
+                <em>Notice:</em> At low \(df\), the t-curve is shorter at the peak and higher at the tails. This pushes the critical value out, making your Confidence Interval wider.
+            </p>
+        </div>
+
+        <div class="viz-panel" id="viz"></div>
+    </div>
+
+<script>
+    // --- Config ---
+    const margin = {top: 40, right: 30, bottom: 50, left: 50};
+    const width = 750 - margin.left - margin.right;
+    const height = 450 - margin.top - margin.bottom;
+
+    // --- D3 Setup ---
+    const svg = d3.select("#viz").append("svg")
+        .attr("viewBox", `0 0 750 450`)
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    // Scales - Increased Y domain slightly to 0.5 to prevent cutting
+    const x = d3.scaleLinear().domain([-5, 5]).range([0, width]);
+    const y = d3.scaleLinear().domain([0, 0.5]).range([height, 0]);
+
+    // Axes
+    const xAxis = svg.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(x));
+
+    const yAxis = svg.append("g")
+        .call(d3.axisLeft(y).ticks(5));
+
+    // Axis Labels
+    svg.append("text").attr("x", width/2).attr("y", height + 40).attr("text-anchor", "middle").style("font-size", "12px").style("fill", "#666").text("Standard Deviations from Mean (z or t score)");
+    
+    // --- Paths ---
+    const pathNorm = svg.append("path").attr("class", "line-norm");
+    const pathT = svg.append("path").attr("class", "line-t");
+    
+    // Labels inside chart
+    svg.append("text").attr("x", x(0.2)).attr("y", y(0.42)).text("Normal Model").style("fill", "#2c3e50").style("font-weight", "bold");
+    const tLabel = svg.append("text").attr("x", x(0.2)).attr("y", y(0.38)).style("fill", "#e74c3c").style("font-weight", "bold");
+
+    // --- Math Functions ---
+
+    // Standard Normal PDF
+    function normalPDF(x) {
+        return (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * x * x);
+    }
+
+    // Pre-calculated Normalization Constants for t-dist (df=1 to 30)
+    // Formula: Gamma((df+1)/2) / ( sqrt(df*pi) * Gamma(df/2) )
+    const tConstants = [
+        0, // placeholder 0
+        0.318309886, 0.353553391, 0.367552597, 0.375175750, 0.379606690, // df 1-5
+        0.382414736, 0.384310557, 0.385659223, 0.386657904, 0.387421272, // df 6-10
+        0.388022830, 0.388508543, 0.388909012, 0.389244908, 0.389530433, // df 11-15
+        0.389776269, 0.389990141, 0.390177994, 0.390344465, 0.390493010, // df 16-20
+        0.390626353, 0.390746698, 0.390855850, 0.390955294, 0.391046268, // df 21-25
+        0.391129813, 0.391206797, 0.391277943, 0.391343891, 0.391405175  // df 26-30
+    ];
+
+    // Robust Student's t PDF
+    function tPDF(x, df) {
+        // Use pre-calculated constant if available, else approx
+        const constant = (df <= 30) ? tConstants[df] : 0.3989; 
+        const term = Math.pow(1 + (x * x) / df, - (df + 1) / 2);
+        return constant * term;
+    }
+
+    // Critical Values Lookup (Simplified for 95% Confidence / Two-tail 0.05)
+    // Indexes 0-30 map to DF 1-30.
+    const tCritLookup = [
+        0, 12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23, // 0-10
+        2.20, 2.18, 2.16, 2.14, 2.13, 2.12, 2.11, 2.10, 2.09, 2.09,    // 11-20
+        2.08, 2.07, 2.07, 2.06, 2.06, 2.06, 2.05, 2.05, 2.05, 2.04     // 21-30
+    ];
+
+    // --- Main Update ---
+    function update() {
+        const df = parseInt(document.getElementById('dfSlider').value);
+        
+        // Update Text
+        document.getElementById('val_df').innerText = df;
+        tLabel.text(`t-Distribution (df=${df})`);
+
+        // Update Stats
+        let tCrit = (df <= 30) ? tCritLookup[df] : 2.00; // Approx for >30 in this simple slider
+        const zCrit = 1.96;
+        const penalty = ((tCrit - zCrit) / zCrit) * 100;
+
+        document.getElementById('stat_tcrit').innerText = tCrit.toFixed(2);
+        document.getElementById('stat_penalty').innerText = `+${penalty.toFixed(1)}% Wider`;
+
+        // 1. Generate Data
+        const steps = 300;
+        const xVals = d3.range(-5, 5, 10/steps);
+        
+        const dataNorm = xVals.map(v => ({ x: v, y: normalPDF(v) }));
+        const dataT = xVals.map(v => ({ x: v, y: tPDF(v, df) }));
+
+        // 2. Line Generator
+        const line = d3.line()
+            .x(d => x(d.x))
+            .y(d => y(d.y));
+
+        // 3. Draw
+        pathNorm.attr("d", line(dataNorm));
+        pathT.transition().duration(200).attr("d", line(dataT));
+
+        // 4. Draw Arrows/Annotations for "Fat Tails" if df is low
+        svg.selectAll(".annotation").remove();
+        
+        if(df < 5) {
+            // Arrow pointing to tail difference
+            svg.append("line")
+                .attr("class", "annotation")
+                .attr("x1", x(3)).attr("y1", y(0.08))
+                .attr("x2", x(3)).attr("y2", y(0.02))
+                .attr("stroke", "#333").attr("marker-end", "url(#arrow)");
+            
+            svg.append("text")
+                .attr("class", "annotation")
+                .attr("x", x(3)).attr("y", y(0.09))
+                .attr("text-anchor", "middle")
+                .style("font-size", "11px")
+                .text("Fatter Tails (More Risk)");
+        }
+        
+        // Force MathJax Reprocess if available
+        if(window.MathJax) {
+            MathJax.typesetPromise();
+        }
+    }
+
+    // Add arrow marker
+    svg.append("defs").append("marker")
+        .attr("id", "arrow")
+        .attr("viewBox", "0 -5 10 10")
+        .attr("refX", 5).attr("refY", 0)
+        .attr("markerWidth", 6).attr("markerHeight", 6)
+        .attr("orient", "auto")
+        .append("path")
+        .attr("d", "M0,-5L10,0L0,5")
+        .attr("class","arrowHead");
+
+    // Event Listeners
+    document.getElementById('dfSlider').addEventListener('input', update);
+
+    // Init
+    update();
+
+</script>
+
+</body>
+</html>
